@@ -8,8 +8,8 @@
 #include "HardwareSetup.h"
 
 #define BEZIER_ORDER_FOOT    7
-#define NUM_INPUTS (12 + 2*(BEZIER_ORDER_FOOT+1))
-#define NUM_OUTPUTS 19
+#define NUM_INPUTS (14 + 2*(BEZIER_ORDER_FOOT+1))
+#define NUM_OUTPUTS 37
 
 #define PULSE_TO_RAD (2.0f*3.14159f / 1200.0f)
 
@@ -45,6 +45,26 @@ float angle2;
 float velocity2;
 float duty_cycle2;
 float angle2_init;
+
+// Variables for q3
+float current3;
+float current_des3 = 0;
+float prev_current_des3 = 0;
+float current_int3 = 0;
+float angle3;
+float velocity3;
+float duty_cycle3;
+float angle3_init;
+
+// Variables for q4
+float current4;
+float current_des4 = 0;
+float prev_current_des4 = 0;
+float current_int4 = 0;
+float angle4;
+float velocity4;
+float duty_cycle4;
+float angle4_init;
 
 // Fixed kinematic parameters
 const float l_OA=.011; 
@@ -122,6 +142,45 @@ void CurrentLoop() {
     }             
     prev_current_des2 = current_des2; 
     
+    current3 = -(((float(motorShield.readCurrentC())/65536.0f)*30.0f)-15.0f);           // measure current
+    velocity3 = encoderC.getVelocity() * PULSE_TO_RAD;                                  // measure velocity  
+    float err_c3 = current_des3 - current3;                                             // current error
+    current_int3 += err_c3;                                                             // integrate error
+    current_int3 = fmaxf( fminf(current_int3, current_int_max), -current_int_max);      // anti-windup   
+    float ff3 = R*current_des3 + k_t*velocity3;                                         // feedforward terms
+    duty_cycle3 = (ff3 + current_Kp*err_c3 + current_Ki*current_int3)/supply_voltage;   // PI current controller
+    
+    float absDuty3 = abs(duty_cycle3);
+    if (absDuty3 > duty_max) {
+        duty_cycle3 *= duty_max / absDuty3;
+        absDuty3 = duty_max;
+    }    
+    if (duty_cycle3 < 0) { // backwards
+        motorShield.motorCWrite(absDuty3, 1);
+    } else { // forwards
+        motorShield.motorCWrite(absDuty3, 0);
+    }             
+    prev_current_des3 = current_des3; 
+
+    current4 = -(((float(motorShield.readCurrentD())/65536.0f)*30.0f)-15.0f);           // measure current
+    velocity4 = encoderD.getVelocity() * PULSE_TO_RAD;                                  // measure velocity  
+    float err_c4 = current_des4 - current4;                                             // current error
+    current_int4 += err_c4;                                                             // integrate error
+    current_int4 = fmaxf( fminf(current_int4, current_int_max), -current_int_max);      // anti-windup   
+    float ff4 = R*current_des4 + k_t*velocity4;                                         // feedforward terms
+    duty_cycle4 = (ff4 + current_Kp*err_c4 + current_Ki*current_int4)/supply_voltage;   // PI current controller
+    
+    float absDuty4 = abs(duty_cycle4);
+    if (absDuty4 > duty_max) {
+        duty_cycle4 *= duty_max / absDuty4;
+        absDuty4 = duty_max;
+    }    
+    if (duty_cycle4 < 0) { // backwards
+        motorShield.motorDWrite(absDuty4, 1);
+    } else { // forwards
+        motorShield.motorDWrite(absDuty4, 0);
+    }             
+    prev_current_des4 = current_des4; 
 }
 
 int main(void) {
@@ -146,19 +205,21 @@ int main(void) {
     
             angle1_init                 = input_params[3];    // Initial angle for q1 (rad)
             angle2_init                 = input_params[4];    // Initial angle for q2 (rad)
+            angle3_init                 = input_params[5];    // Initial angle for q3 (rad)
+            angle4_init                 = input_params[6];    // Initial angle for q4 (rad)
 
-            K_xx                        = input_params[5];    // Foot stiffness N/m
-            K_yy                        = input_params[6];    // Foot stiffness N/m
-            K_xy                        = input_params[7];    // Foot stiffness N/m
-            D_xx                        = input_params[8];    // Foot damping N/(m/s)
-            D_yy                        = input_params[9];    // Foot damping N/(m/s)
-            D_xy                        = input_params[10];   // Foot damping N/(m/s)
-            duty_max                    = input_params[11];   // Maximum duty factor
+            K_xx                        = input_params[7];    // Foot stiffness N/m
+            K_yy                        = input_params[8];    // Foot stiffness N/m
+            K_xy                        = input_params[9];    // Foot stiffness N/m
+            D_xx                        = input_params[10];    // Foot damping N/(m/s)
+            D_yy                        = input_params[11];    // Foot damping N/(m/s)
+            D_xy                        = input_params[12];   // Foot damping N/(m/s)
+            duty_max                    = input_params[13];   // Maximum duty factor
           
             // Get foot trajectory points
             float foot_pts[2*(BEZIER_ORDER_FOOT+1)];
             for(int i = 0; i<2*(BEZIER_ORDER_FOOT+1);i++) {
-              foot_pts[i] = input_params[12+i];    
+              foot_pts[i] = input_params[14+i];    
             }
             rDesFoot_bez.setPoints(foot_pts);
             
@@ -175,6 +236,8 @@ int main(void) {
 
             motorShield.motorAWrite(0, 0); //turn motor A off
             motorShield.motorBWrite(0, 0); //turn motor B off
+            motorShield.motorCWrite(0, 0); //turn motor C off
+            motorShield.motorDWrite(0, 0); //turn motor D off
                          
             // Run experiment
             while( t.read() < start_period + traj_period + end_period) { 
@@ -185,22 +248,48 @@ int main(void) {
                 angle2 = encoderB.getPulses() * PULSE_TO_RAD + angle2_init;       
                 velocity2 = encoderB.getVelocity() * PULSE_TO_RAD;           
                 
+                angle3 = encoderC.getPulses() * PULSE_TO_RAD + angle3_init;       
+                velocity3 = encoderC.getVelocity() * PULSE_TO_RAD;           
+
+                angle4 = encoderD.getPulses() * PULSE_TO_RAD + angle4_init;       
+                velocity4 = encoderD.getVelocity() * PULSE_TO_RAD;           
+
                 const float th1 = angle1;
                 const float th2 = angle2;
+                const float th3 = angle3;
+                const float th4 = angle4;
                 const float dth1= velocity1;
                 const float dth2= velocity2;
+                const float dth3= velocity3;
+                const float dth4= velocity4;
  
                 // Calculate the Jacobian
-                float Jx_th1 = 0;
-                float Jx_th2 = 0;
-                float Jy_th1 = 0;
-                float Jy_th2 = 0;
+                // TODO FIX THIS
+                // Left leg
+                float Jx_th1 = l_AC*cos(th1 + th2) + l_DE*cos(th1) + l_OB*cos(th1);
+                float Jx_th2 = l_AC*cos(th1 + th2);
+                float Jy_th1 = l_AC*sin(th1 + th2) + l_DE*sin(th1) + l_OB*sin(th1);
+                float Jy_th2 = l_AC*sin(th1 + th2);
+
+                // Right leg
+                float Jx_th3 = l_AC*cos(th3 + th4) + l_DE*cos(th3) + l_OB*cos(th3);
+                float Jx_th4 = l_AC*cos(th3 + th4);
+                float Jy_th3 = l_AC*sin(th3 + th4) + l_DE*sin(th3) + l_OB*sin(th3);
+                float Jy_th4 = l_AC*sin(th3 + th4);
+                // FIX UNTIL HERE
                                 
                 // Calculate the forward kinematics (position and velocity)
-                float xFoot = 0;
-                float yFoot = 0;
-                float dxFoot = 0;
-                float dyFoot = 0;       
+                // Left leg
+                float xFoot_left = l_OB*sin(th1) + l_AC*sin(th1+th2) + l_DE*sin(th1);
+                float yFoot_left = -l_OB*cos(th1) - l_AC*cos(th1+th2) - l_DE*cos(th1);
+                float dxFoot_left = dth1 * (l_AC*cos(th1+th2) + l_OB*cos(th1) + l_DE*cos(th1)) + dth2 * l_AC * cos(th1+th2);
+                float dyFoot_left = dth1 * (l_AC*sin(th1+th2) + l_OB*sin(th1) + l_DE*sin(th1)) + dth2 * l_AC * sin(th1+th2);    
+
+                // Right leg
+                float xFoot_right = l_OB*sin(th3) + l_AC*sin(th3+th4) + l_DE*sin(th3);
+                float yFoot_right = -l_OB*cos(th3) - l_AC*cos(th3+th4) - l_DE*cos(th3);
+                float dxFoot_right = dth3 * (l_AC*cos(th3+th4) + l_OB*cos(th3) + l_DE*cos(th3)) + dth4 * l_AC * cos(th3+th4);
+                float dyFoot_right = dth3 * (l_AC*sin(th3+th4) + l_OB*sin(th3) + l_DE*sin(th3)) + dth4 * l_AC * sin(th3+th4);    
 
                 // Set gains based on buffer and traj times, then calculate desired x,y from Bezier trajectory at current time if necessary
                 float teff  = 0;
@@ -232,14 +321,19 @@ int main(void) {
                 }
                 
                 // Get desired foot positions and velocities
-                float rDesFoot[2], vDesFoot[2];
+                float rDesFoot[4], vDesFoot[4];
                 rDesFoot_bez.evaluate(teff/traj_period,rDesFoot);
                 rDesFoot_bez.evaluateDerivative(teff/traj_period,vDesFoot);
                 vDesFoot[0]/=traj_period;
                 vDesFoot[1]/=traj_period;
+                vDesFoot[2]/=traj_period;
+                vDesFoot[3]/=traj_period;
                 vDesFoot[0]*=vMult;
                 vDesFoot[1]*=vMult;
+                vDesFoot[2]*=vMult;
+                vDesFoot[3]*=vMult;
                 
+                // TODO FIX THIS
                 // Calculate the inverse kinematics (joint positions and velocities) for desired joint angles              
                 float xFoot_inv = -rDesFoot[0];
                 float yFoot_inv = rDesFoot[1];                
@@ -247,37 +341,54 @@ int main(void) {
                 float alpha = abs(acos( (pow(l_OE,2) - pow(l_AC,2) - pow((l_OB+l_DE),2))/(-2.0f*l_AC*(l_OB+l_DE)) ));
                 float th2_des = -(3.14159f - alpha); 
                 float th1_des = -((3.14159f/2.0f) + atan2(yFoot_inv,xFoot_inv) - abs(asin( (l_AC/l_OE)*sin(alpha) )));
+                float th3_des = 0;
+                float th4_des = 0;
                 
                 float dd = (Jx_th1*Jy_th2 - Jx_th2*Jy_th1);
                 float dth1_des = (1.0f/dd) * (  Jy_th2*vDesFoot[0] - Jx_th2*vDesFoot[1] );
                 float dth2_des = (1.0f/dd) * ( -Jy_th1*vDesFoot[0] + Jx_th1*vDesFoot[1] );
+                float dth3_des = 0;
+                float dth4_des = 0;
+                // FIX UNTIL HERE
         
                 // Calculate error variables
-                float e_x = 0;
-                float e_y = 0;
-                float de_x = 0;
-                float de_y = 0;
+                float e_x_left = rDesFoot[0] - xFoot_left;
+                float e_y_left = rDesFoot[1] - yFoot_left;
+                float e_x_right = rDesFoot[2] - xFoot_right;
+                float e_y_right = rDesFoot[3] - yFoot_right;
+                float de_x_left = vDesFoot[0] - dxFoot_left;
+                float de_y_left = vDesFoot[1] - dyFoot_left;
+                float de_x_right = vDesFoot[2] - dxFoot_right;
+                float de_y_right = vDesFoot[3] - dyFoot_right;
         
                 // Calculate virtual force on foot
-                float fx = 0;
-                float fy = 0;
+                float fx_left = K_xx*e_x_left + K_xy*e_y_left + D_xx*de_x_left + D_xy*de_y_left;
+                float fx_right = K_xx*e_x_right + K_xy*e_y_right + D_xx*de_x_right + D_xy*de_y_right;
+                float fy_left = K_xy*e_x_left + K_yy*e_y_left + D_xy*de_x_left + D_yy*de_y_left;
+                float fy_right = K_xy*e_x_right + K_yy*e_y_right + D_xy*de_x_right + D_yy*de_y_right;
                                 
-                // Set desired currents             
-                current_des1 = 0;          
-                current_des2 = 0;   
+                // TODO FIX THIS
+                float tau_d1 = 0; //(  Jx_th1*fx + Jy_th1*fy );
+                float tau_d2 = 0; //(  Jx_th2*fx + Jy_th2*fy );
+                float tau_d3 = 0;
+                float tau_d4 = 0;
+                // TODO FIX THIS
         
-                // Joint impedance
-                // sub Kxx for K1, Dxx for D1, Kyy for K2, Dyy for D2
-                // Note: Be careful with signs now that you have non-zero desired angles!
-                // Your equations should be of the form i_d = K1*(q1_d - q1) + D1*(dq1_d - dq1)
-//                current_des1 = 0;          
-//                current_des2 = 0;                          
+                // // Joint impedance
+                // // sub Kxx for K1, Dxx for D1, Kyy for K2, Dyy for D2
+                // // Note: Be careful with signs now that you have non-zero desired angles!
+                // // Your equations should be of the form i_d = K1*(q1_d - q1) + D1*(dq1_d - dq1)
+                // current_des1 = (K_xx * (th1_des - th1) + D_xx * (dth1_des - dth1)) / k_t;
+                // current_des2 = (K_yy * (th2_des - th2) + D_yy * (dth2_des - dth2)) / k_t;
+                // current_des2 = (K_yy * (th3_des - th3) + D_yy * (dth3_des - dth3)) / k_t;
+                // current_des2 = (K_yy * (th4_des - th4) + D_yy * (dth4_des - dth4)) / k_t;
                            
                 // Cartesian impedance  
                 // Note: As with the joint space laws, be careful with signs!              
-//                current_des1 = 0;          
-//                current_des2 = 0;   
-                
+               current_des1 = tau_d1 / k_t;          
+               current_des2 = tau_d2 / k_t;   
+               current_des3 = tau_d3 / k_t;   
+               current_des4 = tau_d4 / k_t;   
                 
                 // Form output to send to MATLAB     
                 float output_data[NUM_OUTPUTS];
@@ -295,16 +406,36 @@ int main(void) {
                 output_data[8] = current2;
                 output_data[9] = current_des2;
                 output_data[10]= duty_cycle2;
-                // foot state
-                output_data[11] = xFoot;
-                output_data[12] = yFoot;
-                output_data[13] = dxFoot;
-                output_data[14] = dyFoot;
-                output_data[15] = rDesFoot[0];
-                output_data[16] = rDesFoot[1];
-                output_data[17] = vDesFoot[0];
-                output_data[18] = vDesFoot[1];
-                
+                // motor 3 state
+                output_data[11] = angle3;
+                output_data[12] = velocity3;
+                output_data[13] = current3;
+                output_data[14] = current_des3;
+                output_data[15]= duty_cycle3;
+                // motor 4 state
+                output_data[16] = angle4;
+                output_data[17] = velocity4;
+                output_data[18] = current4;
+                output_data[19] = current_des4;
+                output_data[20]= duty_cycle4;
+                // left foot state
+                output_data[21] = xFoot_left;
+                output_data[22] = yFoot_left;
+                output_data[23] = dxFoot_left;
+                output_data[24] = dyFoot_left;
+                output_data[25] = rDesFoot[0];
+                output_data[26] = rDesFoot[1];
+                output_data[27] = vDesFoot[0];
+                output_data[28] = vDesFoot[1];
+                // right foot state
+                output_data[29] = xFoot_right;
+                output_data[30] = yFoot_right;
+                output_data[31] = dxFoot_right;
+                output_data[32] = dyFoot_right;
+                output_data[33] = rDesFoot[2];
+                output_data[34] = rDesFoot[3];
+                output_data[35] = vDesFoot[2];
+                output_data[36] = vDesFoot[3];
                 // Send data to MATLAB
                 server.sendData(output_data,NUM_OUTPUTS);
 
