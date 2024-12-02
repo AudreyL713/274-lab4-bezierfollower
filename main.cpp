@@ -6,6 +6,8 @@
 #include "BezierCurve.h"
 #include "MotorShield.h" 
 #include "HardwareSetup.h"
+#include "Matrix.h"
+#include "MatrixMath.h"
 
 #define BEZIER_ORDER_FOOT    7
 #define NUM_INPUTS (14 + 2*(BEZIER_ORDER_FOOT+1))
